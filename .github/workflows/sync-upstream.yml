@@ -26,7 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout fork
-        uses: actions/checkout@v4
+        # v5 基于 Node.js 24，避免 v4(Node.js 20) 的弃用警告
+        uses: actions/checkout@v5
         with:
           ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
