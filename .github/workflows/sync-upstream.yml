@@ -1,0 +1,56 @@
+name: Auto Sync Upstream
+
+# 定时轮询上游仓库；也可手动触发
+on:
+  schedule:
+    # 每 6 小时检查一次（UTC 时间），即北京 02/08/14/20 点
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}   # 允许在 Actions 页面手动点 Run workflow
+
+# 需要写权限：同步后要 push 回你的 fork
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: halfwaystudent/douyin-sparkflow
+  UPSTREAM_BRANCH: main
+  TARGET_BRANCH: main
+
+# 防止上一次运行还没结束就开新的一次
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Add upstream and fetch
+        run: |
+          git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git
+          git fetch upstream ${{ env.UPSTREAM_BRANCH }}
+
+      - name: Check if behind upstream
+        id: check
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/${{ env.UPSTREAM_BRANCH }})
+          echo "behind=$BEHIND"
+          echo "IS_BEHIND=$([ "$BEHIND" -gt 0 ] && echo true || echo false)" >> "$GITHUB_ENV"
+
+      - name: Merge upstream changes
+        if: env.IS_BEHIND == 'true'
+        run: |
+          git merge upstream/${{ env.UPSTREAM_BRANCH }} --allow-unrelated-histories --no-edit -m "chore: sync upstream ${{ env.UPSTREAM_REPO }}"
+          git push origin ${{ env.TARGET_BRANCH }}
+          echo "已同步上游更新并推送（可触发你的部署/构建）"
+
+      - name: Done (no changes)
+        if: env.IS_BEHIND != 'true'
+        run: |
+          echo "当前已是最新，无需同步"
