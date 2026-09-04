@@ -1,0 +1,74 @@
+# ============================================================
+# Dockerfile.aliyun — 阿里云源专用构建镜像（隔离版）
+# ------------------------------------------------------------
+# 用途   : ACR 海外机器构建用。与上游 Dockerfile.server 内容一致，
+#          唯一差异是 pip 源默认值: 清华TUNA -> 阿里云。
+# 隔离性 : 独立文件名，上游同步(merge)永远不会覆盖本文件。
+# 上游   : halfwaystudent/douyin-sparkflow  (DouYinSparkFlow/Dockerfile.server)
+# 核对时间: 2026-09-04 23:00 (与上游 main 分支逐行核对, 仅 PIP 源 2 行不同)
+# ACR 配置: Dockerfile 文件名填 Dockerfile.aliyun, 构建上下文目录 DouYinSparkFlow/
+# ============================================================
+ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright/python:v1.56.0-jammy
+ARG NODE_RUNTIME_IMAGE=node:22-bookworm-slim
+FROM ${NODE_RUNTIME_IMAGE} AS node-runtime
+FROM ${PLAYWRIGHT_BASE_IMAGE}
+
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+
+WORKDIR /app
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG ALL_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG all_proxy
+# [阿里云源] 构建机机房 IP 可直连, 无 WAF 拦截 (原上游为 pypi.tuna.tsinghua.edu.cn)
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
+
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV ALL_PROXY=${ALL_PROXY}
+ENV http_proxy=${http_proxy}
+ENV https_proxy=${https_proxy}
+ENV all_proxy=${all_proxy}
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+ENV PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list \
+    && sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list \
+    && ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
+    && echo ${TZ} > /etc/timezone \
+    && apt-get update && apt-get install -y \
+      cron \
+      curl \
+      docker.io \
+      fluxbox \
+      fonts-wqy-zenhei \
+      fonts-noto-cjk \
+      novnc \
+      websockify \
+      x11vnc \
+      xfonts-intl-chinese \
+    && docker --version \
+    && node --version \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build proxies must never leak into the runtime container. Compose injects
+# service-addressable runtime proxies explicitly.
+ENV HTTP_PROXY= \
+    HTTPS_PROXY= \
+    ALL_PROXY= \
+    http_proxy= \
+    https_proxy= \
+    all_proxy=
+
+COPY . .
+
+CMD ["python", "main.py", "--doTask"]
