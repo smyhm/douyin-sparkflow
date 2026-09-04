@@ -7,7 +7,8 @@
 # 上游   : halfwaystudent/douyin-sparkflow  (DouYinSparkFlow/Dockerfile.server)
 # 核对时间: 2026-09-04 23:00 (与上游 main 分支逐行核对, 仅 PIP 源 2 行不同)
 # ACR 配置: Dockerfile 文件名填 Dockerfile.aliyun, 构建上下文目录 DouYinSparkFlow/
-# v2 附加 : RUN 块预置空数据文件, 供 named volume 挂载"文件路径"时自动拷贝进卷
+# v3 附加 : 预置数据目录 /app/data 与空文件, 供 named volume 挂载 /app/data
+#           (目录卷) 使用; v2 的"卷挂文件路径"方案因 Docker 限制废弃
 # ============================================================
 ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright/python:v1.56.0-jammy
 ARG NODE_RUNTIME_IMAGE=node:22-bookworm-slim
@@ -72,13 +73,14 @@ ENV HTTP_PROXY= \
 
 COPY . .
 
-# [持久化] 预置空数据文件（含默认值由应用首次启动自动补齐）
-# named volume 挂到下列"文件路径"时，Docker 会把它们从镜像拷贝进卷，
-# 避免"单文件挂载点被 Docker 建为目录"导致 IsADirectoryError / config not found。
+# [持久化] 预置数据目录 /app/data 与空文件
+# compose 用 named volume 挂载 /app/data（目录，Docker 允许），
+# entrypoint 用 symlink 把 /app/config.json 等指向 /app/data 下同名文件，
+# 卷首次创建时 Docker 自动把镜像内 /app/data/* 拷贝进卷。
 RUN mkdir -p /app/data /app/logs \
-    && printf '{}' > /app/config.json \
-    && printf '[]' > /app/usersData.json \
-    && printf '{}' > /app/webui_settings.json \
-    && printf '[config]\\nmixed-port: 7890\\nallow-lan: true\\nmode: rule\\nlog-level: warning\\nrules:\\n  - MATCH,DIRECT\\n' > /app/config.yaml.example
+    && printf '{}' > /app/data/config.json \
+    && printf '[]' > /app/data/usersData.json \
+    && printf '{}' > /app/data/webui_settings.json \
+    && printf '[config]\\nmixed-port: 7890\\nallow-lan: true\\nmode: rule\\nlog-level: warning\\nrules:\\n  - MATCH,DIRECT\\n' > /app/data/config.yaml.example
 
 CMD ["python", "main.py", "--doTask"]
